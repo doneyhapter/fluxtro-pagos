@@ -1,0 +1,7 @@
+# Lista blanca: se excluye todo y se re-incluye solo lo que usa el servicio.
+# Si el servicio necesita un archivo nuevo en el contenedor, se agrega aqui.
+# Verificar siempre antes de desplegar: gcloud meta list-files-for-upload
+/*
+!/main.py
+!/requirements.txt
+!/Dockerfile
