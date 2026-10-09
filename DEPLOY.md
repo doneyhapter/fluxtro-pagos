@@ -35,6 +35,27 @@ en un bloque propio.
 
     gcloud run services describe fluxtro-engine --region us-central1 --format="value(spec.template.spec.containers[0].env)"
 
+## Credenciales por entorno
+
+| Entorno | App en developer.paypal.com | Secreto en Secret Manager | Webhook ID |
+|---|---|---|---|
+| Sandbox | `Default Application` | `paypal-client-secret-sandbox` | `7LN479651L9942313` |
+| Live | `Fluxtro` | `paypal-client-secret-live` | `9HK87803SX890961V` |
+
+Los dos webhooks apuntan a `https://fluxtro-pagos-72277594068.us-central1.run.app/webhook` con
+el evento `Payment capture completed`. Con el servicio en Live, los eventos de Sandbox fallan la
+verificación de firma (400) y no se procesan.
+
+Cada secreto necesita su propio permiso de lectura para la cuenta de servicio (comando del
+paso 4 de la preparación, cambiando el nombre del secreto).
+
+Para pasar de un entorno a otro, en un solo comando:
+
+    gcloud run services update fluxtro-pagos --region us-central1 --project fluxtro-mvp --update-env-vars "PAYPAL_ENV=<sandbox|live>,PAYPAL_CLIENT_ID=<CLIENT_ID>,PAYPAL_WEBHOOK_ID=<WEBHOOK_ID>" --update-secrets "PAYPAL_CLIENT_SECRET=<nombre-del-secreto>:latest"
+
+El Client ID también está en `formulario-exitoso.html` de `fluxtro-landing` (constante
+`PAYPAL_CLIENT_ID`): los dos tienen que ser del mismo entorno.
+
 ## Verificar archivos antes de desplegar
 
     gcloud meta list-files-for-upload
@@ -75,3 +96,9 @@ Los textos de precio de la landing se cambian aparte.
 
 | Fecha | Revisión | Entorno PayPal | Nota |
 |---|---|---|---|
+| 2026-10-07 | `fluxtro-pagos-00001-pbr` | Sandbox | Primer deploy. Commit `dfec991`, build `9d413bf2-d13d-4b31-a61a-95f506c32e15` |
+| 2026-10-07 | `fluxtro-pagos-00002-8vm` | Sandbox | Webhook ID de Sandbox |
+| 2026-10-07 | `fluxtro-pagos-00003-xgv` | Sandbox | Preview de la landing en `ALLOWED_ORIGINS` |
+| 2026-10-09 | `fluxtro-pagos-00004-2vq` | Live | Paso a Live |
+| 2026-10-09 | `fluxtro-pagos-00005-twt` | Live | Preview en `ALLOWED_ORIGINS` para el pago real de prueba |
+| 2026-10-09 | `fluxtro-pagos-00006-wff` | Live | `ALLOWED_ORIGINS` solo producción |
