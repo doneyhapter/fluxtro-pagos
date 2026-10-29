@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1 · 2026-10-29
+
+### Cambios
+
+- Dependencias: `flask` 3.1.3 y `requests` 2.33.0, por vulnerabilidades publicadas
+  (DEUDA_TECNICA §19 del engine). Sin cambios de código.
+
+### Desplegado
+
+- Commit `4606068`. Build `04dfe145-4bcf-49e9-95bb-42467a0f7251`.
+- Revisión `fluxtro-pagos-00007-yiy` (tag `v11`), al 100% del tráfico desde el 2026-10-29.
+  Rollback: `fluxtro-pagos-00006-wff`.
+- Comando: `gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --no-traffic --tag v11`,
+  sin `--set-env-vars` ni `--set-secrets`: la revisión heredó la configuración Live.
+
+### Verificado
+
+- Antes del deploy, en Windows: `tests/test_proceso.py` dio 8 passed y
+  `pip-audit -r requirements.txt` dio `No known vulnerabilities found`.
+- `gcloud run revisions describe`: `PAYPAL_ENV=live`, `PAYPAL_CLIENT_SECRET` →
+  `paypal-client-secret-live:latest`, `PAYPAL_WEBHOOK_ID=9HK87803SX890961V`.
+- `/health` respondió `{"status":"ok"}` en la URL del tag y en la de producción después de
+  mover el tráfico.
+
 ## 1.0 · 2026-10-07
 
 - Servicio nuevo `fluxtro-pagos` (Flask, Cloud Run) con PayPal Checkout.

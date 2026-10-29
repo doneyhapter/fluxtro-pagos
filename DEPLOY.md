@@ -64,6 +64,8 @@ Debe listar exactamente `main.py`, `requirements.txt` y `Dockerfile`.
 
 ## Deploy
 
+> **Primer deploy vs. redeploy.** El comando de abajo es el del primer deploy: fija `PAYPAL_ENV=sandbox` y reemplaza toda la configuración. **No usarlo para redeployar código.** Para un cambio de código o dependencias, desplegar sin `--set-env-vars` ni `--set-secrets` (la revisión hereda la configuración vigente), con `--no-traffic --tag <tag>`. Después, verificar con `gcloud run revisions describe <revision> --format="yaml(spec.containers[0].env)"` que sigue en Live, probar `/health` en la URL del tag y mover el tráfico con `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-revisions <revision>=100`. Usado en v1.1.
+
     gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --service-account fluxtro-pagos@fluxtro-mvp.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --memory 512Mi --timeout 60 --set-env-vars "PAYPAL_ENV=sandbox,PAYPAL_CLIENT_ID=<CLIENT_ID>,SPREADSHEET_ID=<SPREADSHEET_ID>,PRECIO_INFORME=3.00,PRECIO_COMBO=4.00,ALLOWED_ORIGINS=https://fluxtro.app https://www.fluxtro.app,ENGINE_URL_PROCESAR=https://fluxtro-engine-72277594068.us-central1.run.app/procesar,ENGINE_AUDIENCE=https://fluxtro-engine-72277594068.us-central1.run.app/generar-informe" --set-secrets "PAYPAL_CLIENT_SECRET=paypal-client-secret-sandbox:latest"
 
 `--max-instances 1` es obligatorio: el lock de `procesar_captura()` solo protege dentro de una
@@ -102,3 +104,4 @@ Los textos de precio de la landing se cambian aparte.
 | 2026-10-09 | `fluxtro-pagos-00004-2vq` | Live | Paso a Live |
 | 2026-10-09 | `fluxtro-pagos-00005-twt` | Live | Preview en `ALLOWED_ORIGINS` para el pago real de prueba |
 | 2026-10-09 | `fluxtro-pagos-00006-wff` | Live | `ALLOWED_ORIGINS` solo producción |
+| 2026-10-29 | `fluxtro-pagos-00007-yiy` | Live | v1.1: flask 3.1.3 y requests 2.33.0. Commit `4606068`, build `04dfe145-4bcf-49e9-95bb-42467a0f7251`, tag `v11` |
