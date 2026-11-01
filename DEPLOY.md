@@ -64,7 +64,7 @@ Debe listar exactamente `main.py`, `requirements.txt` y `Dockerfile`.
 
 ## Deploy
 
-> **Primer deploy vs. redeploy.** El comando de abajo es el del primer deploy: fija `PAYPAL_ENV=sandbox` y reemplaza toda la configuración. **No usarlo para redeployar código.** Para un cambio de código o dependencias, desplegar sin `--set-env-vars` ni `--set-secrets` (la revisión hereda la configuración vigente), con `--no-traffic --tag <tag>`. Después, verificar con `gcloud run revisions describe <revision> --format="yaml(spec.containers[0].env)"` que sigue en Live, probar `/health` en la URL del tag y mover el tráfico con `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-revisions <revision>=100`. Usado en v1.1.
+> **Primer deploy vs. redeploy.** El comando de abajo es el del primer deploy: fija `PAYPAL_ENV=sandbox` y reemplaza toda la configuración. **No usarlo para redeployar código.** Para un cambio de código o dependencias, desplegar sin `--set-env-vars` ni `--set-secrets` (la revisión hereda la configuración vigente), con `--no-traffic --tag <tag>`. Después, verificar con `gcloud run revisions describe <revision> --format="yaml(spec.containers[0].env)"` que sigue en Live, probar `/health` en la URL del tag y mover el tráfico con `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-latest --remove-tags <tag>`. **No usar `--to-revisions`:** fija el tráfico en esa revisión y los cambios de configuración posteriores (precios, orígenes, secretos) crean revisiones que quedan sin tráfico. Pasó en v1.1 y se corrigió el 2026-11-01.
 
     gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --service-account fluxtro-pagos@fluxtro-mvp.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --memory 512Mi --timeout 60 --set-env-vars "PAYPAL_ENV=sandbox,PAYPAL_CLIENT_ID=<CLIENT_ID>,SPREADSHEET_ID=<SPREADSHEET_ID>,PRECIO_INFORME=3.00,PRECIO_COMBO=4.00,ALLOWED_ORIGINS=https://fluxtro.app https://www.fluxtro.app,ENGINE_URL_PROCESAR=https://fluxtro-engine-72277594068.us-central1.run.app/procesar,ENGINE_AUDIENCE=https://fluxtro-engine-72277594068.us-central1.run.app/generar-informe" --set-secrets "PAYPAL_CLIENT_SECRET=paypal-client-secret-sandbox:latest"
 
@@ -88,11 +88,19 @@ El engine rechazó el token. Cambiar `ENGINE_AUDIENCE` por el client ID que usa 
 `gcloud run services update ... --update-env-vars ENGINE_AUDIENCE=<valor>` y repetir la prueba.
 No requiere cambios en el engine.
 
-## Cambio de precios (fin de la promo)
+## Cambio de precios
 
     gcloud run services update fluxtro-pagos --region us-central1 --project fluxtro-mvp --update-env-vars PRECIO_INFORME=<monto>,PRECIO_COMBO=<monto>
 
-Los textos de precio de la landing se cambian aparte.
+Después, confirmar que la revisión nueva recibe el tráfico:
+
+    gcloud run services describe fluxtro-pagos --region us-central1 --project fluxtro-mvp --format="yaml(status.traffic)"
+
+Tiene que aparecer una sola entrada con `latestRevision: true` y `percent: 100`. Si la revisión nueva
+aparece con 0%, el tráfico está fijado: correr `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-latest`.
+
+Los precios se cambian en tres lugares a la vez: estas variables, los textos de la landing
+(index.html y formulario-exitoso.html) y los Payment Links de respaldo en PayPal.
 
 ## Historial
 
@@ -105,3 +113,4 @@ Los textos de precio de la landing se cambian aparte.
 | 2026-10-09 | `fluxtro-pagos-00005-twt` | Live | Preview en `ALLOWED_ORIGINS` para el pago real de prueba |
 | 2026-10-09 | `fluxtro-pagos-00006-wff` | Live | `ALLOWED_ORIGINS` solo producción |
 | 2026-10-29 | `fluxtro-pagos-00007-yiy` | Live | v1.1: flask 3.1.3 y requests 2.33.0. Commit `4606068`, build `04dfe145-4bcf-49e9-95bb-42467a0f7251`, tag `v11` |
+| 2026-11-01 | `fluxtro-pagos-00008-vfw` | Live | `PRECIO_INFORME=10.00`, `PRECIO_COMBO=12.00` (fin de la promoción). Tráfico pasado a LATEST y tag `v11` quitado de `00007-yiy` |

@@ -1,5 +1,27 @@
 # Changelog
 
+## Configuración · 2026-11-01 — Fin de la promoción
+
+### Cambios
+
+- `PRECIO_INFORME` 3.00 → 10.00 y `PRECIO_COMBO` 4.00 → 12.00. Sin cambios de código.
+
+### Desplegado
+
+- Revisión `fluxtro-pagos-00008-vfw`, creada por
+  `gcloud run services update fluxtro-pagos --region us-central1 --project fluxtro-mvp --update-env-vars PRECIO_INFORME=10.00,PRECIO_COMBO=12.00`.
+- La revisión nueva quedó con 0% de tráfico: el redeploy de v1.1 había fijado el tráfico en
+  `fluxtro-pagos-00007-yiy` con `--to-revisions`, así que los cambios de configuración posteriores
+  no entraban a producción. Se corrigió con `update-traffic --to-latest`: 100% LATEST
+  (`fluxtro-pagos-00008-vfw`). Se quitó el tag `v11` de `00007-yiy` (su URL seguía cobrando 3.00 y 4.00).
+- Ningún pago entró mientras el tráfico estuvo fijado con los precios de la promoción.
+
+### Verificado
+
+- `gcloud run services describe`: `PRECIO_INFORME='10.00'`, `PRECIO_COMBO='12.00'`;
+  `status.traffic` con una sola entrada, `latestRevision: true`, `percent: 100`,
+  `fluxtro-pagos-00008-vfw`, sin tags.
+
 ## 1.1 · 2026-10-29
 
 ### Cambios

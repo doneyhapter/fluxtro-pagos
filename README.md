@@ -31,8 +31,8 @@ CORS solo en `/crear-orden` y `/capturar-orden`, con coincidencia exacta contra 
 | `PAYPAL_CLIENT_SECRET` | Client Secret (llega desde Secret Manager) | sí |
 | `PAYPAL_WEBHOOK_ID` | ID del webhook registrado en PayPal | no (sin ella `/webhook` responde 503) |
 | `SPREADSHEET_ID` | ID del Sheet de leads | sí |
-| `PRECIO_INFORME` | monto en USD, formato `3.00` | sí |
-| `PRECIO_COMBO` | monto en USD, formato `4.00` | sí |
+| `PRECIO_INFORME` | monto en USD, formato `10.00` | sí |
+| `PRECIO_COMBO` | monto en USD, formato `12.00` | sí |
 | `ALLOWED_ORIGINS` | orígenes permitidos para CORS, separados por espacio | sí |
 | `ENGINE_URL_PROCESAR` | URL completa de `/procesar` del engine | sí |
 | `ENGINE_AUDIENCE` | *audience* del ID token para llamar al engine | sí |
