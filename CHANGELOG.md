@@ -1,5 +1,10 @@
 # Changelog
 
+## Infraestructura · 2026-11-02 — Limpieza de Artifact Registry
+
+- Política en `cloud-run-source-deploy`: se conservan las 5 imágenes más recientes por paquete y se borran las de más de 7 días que queden fuera (activa desde 2026-11-01).
+- `fluxtro-pagos` no perdió imágenes (tiene 2). Sin deploy ni cambio de revisión.
+
 ## Configuración · 2026-11-01 — Fin de la promoción
 
 ### Cambios

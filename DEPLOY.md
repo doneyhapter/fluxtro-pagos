@@ -71,6 +71,18 @@ Debe listar exactamente `main.py`, `requirements.txt` y `Dockerfile`.
 `--max-instances 1` es obligatorio: el lock de `procesar_captura()` solo protege dentro de una
 instancia.
 
+## Limpieza de imágenes
+
+El repositorio de imágenes `cloud-run-source-deploy` (compartido con `fluxtro-engine`) tiene desde
+el 2026-11-01 una política de limpieza: se conservan las 5 imágenes más recientes de cada paquete
+y se borran las de más de 7 días que queden fuera.
+
+Consecuencia para el rollback: solo se puede volver a revisiones cuya imagen esté entre esas 5.
+Los cambios de configuración (`services update`) no crean imágenes nuevas, así que no cuentan.
+
+Detalle, cómo ver y cómo revertir la política: `DEPLOY.md` de `fluxtro-engine`, sección
+"Limpieza de imágenes".
+
 ## Registrar el webhook
 
 1. En developer.paypal.com (Sandbox o Live según corresponda) → app Fluxtro → Webhooks → Add
