@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.2 · 2026-11-14
+
+### Cambios
+
+- Dos productos nuevos: "Tu 2027" suelto (`tu2027`) y Carta natal + "Tu 2027" (`carta_tu2027`).
+- `PRODUCTOS` en `main.py` lleva un campo `pendientes` con las columnas que, además de N, pasan a
+  `Pendiente` al liberar la fila. `_procesar_con_lock()` recorre `pendientes` en lugar del
+  `if producto == "combo"`; `informe` y `combo` se comportan igual que antes.
+- Constante nueva `COL_ESTADO_TU2027 = 27` (columna AA, `Estado_Tu2027`). N y AA se escriben en la
+  misma actualización del Sheet. El engine lee AA para disparar `/generar-tu2027`; `fluxtro-pagos` no la lee.
+- `PRECIO_TU2027` y `PRECIO_CARTA_TU2027` son obligatorias: sin ellas el servicio no arranca.
+- Regla 8 sin cambios: cada producto se valida contra su precio fijo. Si N no es `Retenido`, no se
+  toca N, R ni AA (regla 9). `carta_tu2027` no marca R: no incluye audio.
+
+| Clave (`producto`) | Columna X | Descripción en PayPal | Variable de precio | Columnas que pasan a `Pendiente` |
+|---|---|---|---|---|
+| `informe` | `Informe` | `Informe Fluxtro` | `PRECIO_INFORME` | N |
+| `combo` | `Combo` | `Informe Fluxtro + Audio` | `PRECIO_COMBO` | N y R |
+| `tu2027` | `Tu 2027` | `Tu 2027` | `PRECIO_TU2027` | N y AA |
+| `carta_tu2027` | `Carta + Tu 2027` | `Informe Fluxtro + Tu 2027` | `PRECIO_CARTA_TU2027` | N y AA |
+
+### Desplegado
+
+- Sin deploy. Producción sigue en `fluxtro-pagos-00008-vfw`.
+
+### Verificado
+
+- `22 passed` (`.venv/Scripts/python -m pytest -q tests`).
+- Spec: `Claude outputs/SPEC_productos_tu2027_v1.2_2026-11-14.md`.
+  Reporte: `Claude outputs/REPORTE_productos_tu2027_v1.2_2026-11-14.md`.
+
 ## Infraestructura · 2026-11-02 — Limpieza de Artifact Registry
 
 - Política en `cloud-run-source-deploy`: se conservan las 5 imágenes más recientes por paquete y se borran las de más de 7 días que queden fuera (activa desde 2026-11-01).

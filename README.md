@@ -15,7 +15,7 @@ El servicio:
 
 | Endpoint | Descripción |
 |---|---|
-| `POST /crear-orden` | Cuerpo `{"id_pedido": "<uuid v4>", "producto": "informe" \| "combo"}`. Responde `{"id": "<order_id>"}`; `400` si los datos son inválidos; `502` si PayPal falla. |
+| `POST /crear-orden` | Cuerpo `{"id_pedido": "<uuid v4>", "producto": "informe" \| "combo" \| "tu2027" \| "carta_tu2027"}`. Responde `{"id": "<order_id>"}`; `400` si los datos son inválidos; `502` si PayPal falla. |
 | `POST /capturar-orden` | Cuerpo `{"order_id": "<id>"}`. Captura y registra el pago. Responde `200` con `COMPLETED` o `PENDING`, `402` con otro estado, `502` si PayPal falla. Un error del Sheet solo se registra en el log. |
 | `POST /webhook` | Verifica la firma y procesa `PAYMENT.CAPTURE.COMPLETED`. `503` si `PAYPAL_WEBHOOK_ID` está vacía; `400` si la firma no es válida; con firma válida siempre `200`. |
 | `GET /health` | `{"status": "ok"}`. |
@@ -33,6 +33,8 @@ CORS solo en `/crear-orden` y `/capturar-orden`, con coincidencia exacta contra 
 | `SPREADSHEET_ID` | ID del Sheet de leads | sí |
 | `PRECIO_INFORME` | monto en USD, formato `10.00` | sí |
 | `PRECIO_COMBO` | monto en USD, formato `12.00` | sí |
+| `PRECIO_TU2027` | monto en USD, formato `10.00` | sí |
+| `PRECIO_CARTA_TU2027` | monto en USD, formato `17.00` | sí |
 | `ALLOWED_ORIGINS` | orígenes permitidos para CORS, separados por espacio | sí |
 | `ENGINE_URL_PROCESAR` | URL completa de `/procesar` del engine | sí |
 | `ENGINE_AUDIENCE` | *audience* del ID token para llamar al engine | sí |
@@ -42,7 +44,7 @@ Cualquier valor de `PAYPAL_ENV` distinto de `sandbox` o `live` hace fallar el ar
 
 ## Columnas del Sheet
 
-El servicio solo lee las columnas N, R y V y solo escribe N, R, W, X, Y, Z.
+El servicio solo lee las columnas N, R y V y solo escribe N, R, W, X, Y, Z y AA.
 
 | Columna | Nombre | Uso |
 |---|---|---|
@@ -50,9 +52,10 @@ El servicio solo lee las columnas N, R y V y solo escribe N, R, W, X, Y, Z.
 | R (18) | `Estado_Audio` | escribe `Pendiente` al liberar un combo |
 | V (22) | `ID_Pedido` | lee para encontrar la fila (la escribe el receptor) |
 | W (23) | `Estado_Pago` | `Pagado`, `Duplicado` o `Monto inválido` |
-| X (24) | `Producto` | `Informe` o `Combo` |
+| X (24) | `Producto` | `Informe`, `Combo`, `Tu 2027` o `Carta + Tu 2027` |
 | Y (25) | `Monto` | valor cobrado según PayPal, tal como viene |
 | Z (26) | `Captura_ID` | ID de la captura; con duplicado, los IDs separados por `, ` |
+| AA (27) | `Estado_Tu2027` | escribe `Pendiente` al liberar un producto que incluye "Tu 2027" (`tu2027` o `carta_tu2027`); la lee el engine |
 
 ## Reglas de `procesar_captura()`
 
@@ -68,8 +71,9 @@ worker). En orden:
 7. Monto válido = moneda `USD` y valor igual al precio del producto (como `Decimal`). Escribir
    W (`Pagado` o `Monto inválido`), X, Y, Z en una sola actualización.
 8. Si W quedó en `Monto inválido`: salir sin liberar.
-9. Si N es exactamente `Retenido`: N = `Pendiente`, R = `Pendiente` si es combo, y llamar a
-   `/procesar` del engine tras soltar el lock. Si N tiene otro valor, no se toca N ni R.
+9. Si N es exactamente `Retenido`: N = `Pendiente`, R = `Pendiente` si es `combo`, AA = `Pendiente` si es
+   `tu2027` o `carta_tu2027`, y llamar a `/procesar` del engine tras soltar el lock. Si N tiene
+   otro valor, no se toca N, R ni AA.
 
 ## Pruebas
 

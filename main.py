@@ -37,6 +37,8 @@ OBLIGATORIAS = (
     "SPREADSHEET_ID",
     "PRECIO_INFORME",
     "PRECIO_COMBO",
+    "PRECIO_TU2027",
+    "PRECIO_CARTA_TU2027",
     "ALLOWED_ORIGINS",
     "ENGINE_URL_PROCESAR",
     "ENGINE_AUDIENCE",
@@ -46,15 +48,40 @@ OBLIGATORIAS = (
 COL_ESTADO_FASE1 = 14  # N
 COL_ESTADO_AUDIO = 18  # R
 COL_ID_PEDIDO = 22  # V
+COL_ESTADO_TU2027 = 27  # AA
 
 RE_UUID4 = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
 RE_ORDER_ID = re.compile(r"[A-Za-z0-9]{1,64}")
 
+# "pendientes": columnas que, además de N, pasan a `Pendiente` al liberar la fila.
+# R dispara el audio de la carta natal y AA el informe "Tu 2027" (los lee el engine).
 PRODUCTOS = {
-    "informe": {"nombre": "Informe", "descripcion": "Informe Fluxtro", "precio": "PRECIO_INFORME"},
-    "combo": {"nombre": "Combo", "descripcion": "Informe Fluxtro + Audio", "precio": "PRECIO_COMBO"},
+    "informe": {
+        "nombre": "Informe",
+        "descripcion": "Informe Fluxtro",
+        "precio": "PRECIO_INFORME",
+        "pendientes": (),
+    },
+    "combo": {
+        "nombre": "Combo",
+        "descripcion": "Informe Fluxtro + Audio",
+        "precio": "PRECIO_COMBO",
+        "pendientes": ("R",),
+    },
+    "tu2027": {
+        "nombre": "Tu 2027",
+        "descripcion": "Tu 2027",
+        "precio": "PRECIO_TU2027",
+        "pendientes": ("AA",),
+    },
+    "carta_tu2027": {
+        "nombre": "Carta + Tu 2027",
+        "descripcion": "Informe Fluxtro + Tu 2027",
+        "precio": "PRECIO_CARTA_TU2027",
+        "pendientes": ("AA",),
+    },
 }
 
 
@@ -245,8 +272,8 @@ def _procesar_con_lock(capture_id, status, value, currency, custom_id):
         return False
 
     cambios = [(f"N{fila}", ["Pendiente"])]
-    if producto == "combo":
-        cambios.append((f"R{fila}", ["Pendiente"]))
+    for col in PRODUCTOS[producto]["pendientes"]:
+        cambios.append((f"{col}{fila}", ["Pendiente"]))
     _escribir(ws, cambios)
     log.info("captura %s, pedido %s: fila %s liberada (regla 9)", capture_id, id_pedido, fila)
     return True

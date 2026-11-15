@@ -14,6 +14,8 @@ for _k, _v in {
     "SPREADSHEET_ID": "hoja-de-prueba",
     "PRECIO_INFORME": "3.00",
     "PRECIO_COMBO": "4.00",
+    "PRECIO_TU2027": "10.00",
+    "PRECIO_CARTA_TU2027": "17.00",
     "ALLOWED_ORIGINS": "https://ejemplo.test",
     "ENGINE_URL_PROCESAR": "https://engine.test/procesar",
     "ENGINE_AUDIENCE": "https://engine.test/audiencia",
@@ -38,7 +40,7 @@ class HojaFalsa:
     """Imita lo mínimo de gspread.Worksheet que usa main.py."""
 
     def __init__(self, filas):
-        self.filas = [list(f) + [""] * (26 - len(f)) for f in filas]
+        self.filas = [list(f) + [""] * (30 - len(f)) for f in filas]
         self.escrituras = []  # (fila, columna) de cada celda escrita
 
     def col_values(self, col):
@@ -68,7 +70,7 @@ class HojaFalsa:
 
 
 def fila(id_pedido=PEDIDO, n="Retenido", r="", w="", x="", y="", z=""):
-    f = [""] * 26
+    f = [""] * 30
     f[13], f[17], f[21], f[22], f[23], f[24], f[25] = n, r, id_pedido, w, x, y, z
     return f
 
@@ -76,7 +78,7 @@ def fila(id_pedido=PEDIDO, n="Retenido", r="", w="", x="", y="", z=""):
 @pytest.fixture
 def entorno(monkeypatch):
     disparos = []
-    hoja = HojaFalsa([[""] * 26, fila()])  # fila 1 = encabezados, fila 2 = pedido
+    hoja = HojaFalsa([[""] * 30, fila()])  # fila 1 = encabezados, fila 2 = pedido
     monkeypatch.setattr(main, "_hoja", lambda: hoja)
     monkeypatch.setattr(main, "disparar_procesar", lambda: disparos.append(1))
     return hoja, disparos
@@ -86,6 +88,7 @@ def valores(hoja, fila_n=2):
     f = hoja.filas[fila_n - 1]
     return {
         "N": f[13], "R": f[17], "W": f[22], "X": f[23], "Y": f[24], "Z": f[25],
+        "AA": f[26],
     }
 
 
@@ -165,3 +168,126 @@ def test_8_estado_pending_no_escribe(entorno):
     assert hoja.escrituras == []
     assert disparos == []
 
+
+def test_9_tu2027_libera_la_fila_y_marca_aa(entorno):
+    hoja, disparos = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "10.00", "USD", f"{PEDIDO}|tu2027")
+    v = valores(hoja)
+    assert (v["W"], v["X"], v["Y"], v["Z"]) == ("Pagado", "Tu 2027", "10.00", "CAP1")
+    assert v["N"] == "Pendiente"
+    assert v["AA"] == "Pendiente"
+    assert v["R"] == ""
+    assert len(disparos) == 1
+
+
+def test_10_carta_tu2027_libera_la_fila_y_marca_aa(entorno):
+    hoja, disparos = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "17.00", "USD", f"{PEDIDO}|carta_tu2027")
+    v = valores(hoja)
+    assert (v["W"], v["X"], v["Y"], v["Z"]) == ("Pagado", "Carta + Tu 2027", "17.00", "CAP1")
+    assert v["N"] == "Pendiente"
+    assert v["AA"] == "Pendiente"
+    assert v["R"] == ""
+    assert len(disparos) == 1
+
+
+def test_11_n_y_aa_se_escriben_en_la_misma_actualizacion(entorno):
+    hoja, _ = entorno
+    lotes = []
+    original = hoja.batch_update
+
+    def espia(data, value_input_option=None):
+        lotes.append([item["range"] for item in data])
+        original(data, value_input_option=value_input_option)
+
+    hoja.batch_update = espia
+    main.procesar_captura("CAP1", "COMPLETED", "10.00", "USD", f"{PEDIDO}|tu2027")
+    assert lotes[-1] == ["N2", "AA2"]
+
+
+def test_12_informe_y_combo_no_tocan_aa(entorno):
+    hoja, _ = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "4.00", "USD", f"{PEDIDO}|combo")
+    assert valores(hoja)["AA"] == ""
+    assert (2, 27) not in hoja.escrituras
+
+
+def test_13_tu2027_con_monto_distinto_no_libera(entorno):
+    hoja, disparos = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "3.00", "USD", f"{PEDIDO}|tu2027")
+    v = valores(hoja)
+    assert v["W"] == "Monto inválido"
+    assert v["N"] == "Retenido"
+    assert v["AA"] == ""
+    assert disparos == []
+
+
+def test_14_carta_tu2027_al_precio_de_tu2027_no_libera(entorno):
+    hoja, disparos = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "10.00", "USD", f"{PEDIDO}|carta_tu2027")
+    v = valores(hoja)
+    assert v["W"] == "Monto inválido"
+    assert v["AA"] == ""
+    assert disparos == []
+
+
+def test_15_fila_ya_liberada_no_marca_aa(entorno):
+    hoja, disparos = entorno
+    hoja.filas[1][13] = "Informe enviado"
+    main.procesar_captura("CAP1", "COMPLETED", "10.00", "USD", f"{PEDIDO}|tu2027")
+    v = valores(hoja)
+    assert v["W"] == "Pagado"
+    assert v["N"] == "Informe enviado"
+    assert v["AA"] == ""
+    assert disparos == []
+
+
+def test_16_producto_desconocido_no_escribe(entorno):
+    hoja, disparos = entorno
+    main.procesar_captura("CAP1", "COMPLETED", "10.00", "USD", f"{PEDIDO}|tu2028")
+    assert hoja.escrituras == []
+    assert disparos == []
+
+
+class _Resp:
+    status_code = 201
+    text = ""
+
+    def json(self):
+        return {"id": "ORDEN1"}
+
+
+@pytest.mark.parametrize("producto, monto, descripcion", [
+    ("informe", "3.00", "Informe Fluxtro"),
+    ("combo", "4.00", "Informe Fluxtro + Audio"),
+    ("tu2027", "10.00", "Tu 2027"),
+    ("carta_tu2027", "17.00", "Informe Fluxtro + Tu 2027"),
+])
+def test_17_crear_orden_usa_el_precio_del_servidor(monkeypatch, producto, monto, descripcion):
+    enviados = []
+
+    def paypal_falso(metodo, ruta, **kwargs):
+        enviados.append(kwargs["json"])
+        return _Resp()
+
+    monkeypatch.setattr(main, "_paypal", paypal_falso)
+    r = main.app.test_client().post(
+        "/crear-orden", json={"id_pedido": PEDIDO, "producto": producto, "monto": "0.01"})
+    assert r.status_code == 200
+    unidad = enviados[0]["purchase_units"][0]
+    assert unidad["amount"] == {"currency_code": "USD", "value": monto}
+    assert unidad["custom_id"] == f"{PEDIDO}|{producto}"
+    assert unidad["description"] == descripcion
+
+
+def test_18_crear_orden_rechaza_un_producto_desconocido(monkeypatch):
+    monkeypatch.setattr(main, "_paypal", lambda *a, **k: pytest.fail("no debe llamar a PayPal"))
+    r = main.app.test_client().post(
+        "/crear-orden", json={"id_pedido": PEDIDO, "producto": "Tu 2027"})
+    assert r.status_code == 400
+
+
+def test_19_sin_los_precios_nuevos_el_servicio_no_arranca(monkeypatch):
+    monkeypatch.delenv("PRECIO_TU2027")
+    with pytest.raises(RuntimeError, match="PRECIO_TU2027"):
+        main._validar_arranque()

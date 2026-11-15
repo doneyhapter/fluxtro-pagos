@@ -66,7 +66,9 @@ Debe listar exactamente `main.py`, `requirements.txt` y `Dockerfile`.
 
 > **Primer deploy vs. redeploy.** El comando de abajo es el del primer deploy: fija `PAYPAL_ENV=sandbox` y reemplaza toda la configuración. **No usarlo para redeployar código.** Para un cambio de código o dependencias, desplegar sin `--set-env-vars` ni `--set-secrets` (la revisión hereda la configuración vigente), con `--no-traffic --tag <tag>`. Después, verificar con `gcloud run revisions describe <revision> --format="yaml(spec.containers[0].env)"` que sigue en Live, probar `/health` en la URL del tag y mover el tráfico con `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-latest --remove-tags <tag>`. **No usar `--to-revisions`:** fija el tráfico en esa revisión y los cambios de configuración posteriores (precios, orígenes, secretos) crean revisiones que quedan sin tráfico. Pasó en v1.1 y se corrigió el 2026-11-01.
 
-    gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --service-account fluxtro-pagos@fluxtro-mvp.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --memory 512Mi --timeout 60 --set-env-vars "PAYPAL_ENV=sandbox,PAYPAL_CLIENT_ID=<CLIENT_ID>,SPREADSHEET_ID=<SPREADSHEET_ID>,PRECIO_INFORME=3.00,PRECIO_COMBO=4.00,ALLOWED_ORIGINS=https://fluxtro.app https://www.fluxtro.app,ENGINE_URL_PROCESAR=https://fluxtro-engine-72277594068.us-central1.run.app/procesar,ENGINE_AUDIENCE=https://fluxtro-engine-72277594068.us-central1.run.app/generar-informe" --set-secrets "PAYPAL_CLIENT_SECRET=paypal-client-secret-sandbox:latest"
+**v1.2 agrega dos variables obligatorias.** El redeploy de código tiene que cargarlas en el mismo comando, con `--update-env-vars PRECIO_TU2027=10.00,PRECIO_CARTA_TU2027=17.00`, además de `--no-traffic --tag <tag>`. Si faltan, la revisión nueva no arranca. `--update-env-vars` conserva el resto de la configuración; no usar `--set-env-vars`.
+
+    gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --service-account fluxtro-pagos@fluxtro-mvp.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --memory 512Mi --timeout 60 --set-env-vars "PAYPAL_ENV=sandbox,PAYPAL_CLIENT_ID=<CLIENT_ID>,SPREADSHEET_ID=<SPREADSHEET_ID>,PRECIO_INFORME=3.00,PRECIO_COMBO=4.00,PRECIO_TU2027=10.00,PRECIO_CARTA_TU2027=17.00,ALLOWED_ORIGINS=https://fluxtro.app https://www.fluxtro.app,ENGINE_URL_PROCESAR=https://fluxtro-engine-72277594068.us-central1.run.app/procesar,ENGINE_AUDIENCE=https://fluxtro-engine-72277594068.us-central1.run.app/generar-informe" --set-secrets "PAYPAL_CLIENT_SECRET=paypal-client-secret-sandbox:latest"
 
 `--max-instances 1` es obligatorio: el lock de `procesar_captura()` solo protege dentro de una
 instancia.
@@ -102,7 +104,9 @@ No requiere cambios en el engine.
 
 ## Cambio de precios
 
-    gcloud run services update fluxtro-pagos --region us-central1 --project fluxtro-mvp --update-env-vars PRECIO_INFORME=<monto>,PRECIO_COMBO=<monto>
+    gcloud run services update fluxtro-pagos --region us-central1 --project fluxtro-mvp --update-env-vars PRECIO_INFORME=<monto>,PRECIO_COMBO=<monto>,PRECIO_TU2027=<monto>,PRECIO_CARTA_TU2027=<monto>
+
+Las variables son `PRECIO_INFORME`, `PRECIO_COMBO`, `PRECIO_TU2027` y `PRECIO_CARTA_TU2027`; se pasan solo las que cambian.
 
 Después, confirmar que la revisión nueva recibe el tráfico:
 
