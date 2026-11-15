@@ -68,6 +68,8 @@ Debe listar exactamente `main.py`, `requirements.txt` y `Dockerfile`.
 
 **v1.2 agrega dos variables obligatorias.** El redeploy de código tiene que cargarlas en el mismo comando, con `--update-env-vars PRECIO_TU2027=10.00,PRECIO_CARTA_TU2027=17.00`, además de `--no-traffic --tag <tag>`. Si faltan, la revisión nueva no arranca. `--update-env-vars` conserva el resto de la configuración; no usar `--set-env-vars`.
 
+**Mientras la revisión nueva está en `--no-traffic`,** `status.traffic` muestra el tráfico fijado en la revisión anterior, sin `latestRevision: true`. Es el efecto esperado y se corrige al mover el tráfico con `--to-latest --remove-tags <tag>`. En ese lapso no cambiar la configuración del servicio (precios, orígenes, secretos): la revisión que se crea queda sin tráfico. Visto en el deploy de v1.3.
+
     gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --service-account fluxtro-pagos@fluxtro-mvp.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --memory 512Mi --timeout 60 --set-env-vars "PAYPAL_ENV=sandbox,PAYPAL_CLIENT_ID=<CLIENT_ID>,SPREADSHEET_ID=<SPREADSHEET_ID>,PRECIO_INFORME=3.00,PRECIO_COMBO=4.00,PRECIO_TU2027=10.00,PRECIO_CARTA_TU2027=17.00,ALLOWED_ORIGINS=https://fluxtro.app https://www.fluxtro.app,ENGINE_URL_PROCESAR=https://fluxtro-engine-72277594068.us-central1.run.app/procesar,ENGINE_AUDIENCE=https://fluxtro-engine-72277594068.us-central1.run.app/generar-informe" --set-secrets "PAYPAL_CLIENT_SECRET=paypal-client-secret-sandbox:latest"
 
 `--max-instances 1` es obligatorio: el lock de `procesar_captura()` solo protege dentro de una
@@ -122,6 +124,12 @@ Los precios se cambian en tres lugares a la vez: estas variables, los textos de 
 
 v1.3 no agrega variables de entorno. La pestaña `Cupones` tiene que existir en el Sheet, con los encabezados del README, antes de usar un cupón; mientras no exista, todo cupón se responde como no disponible y las compras sin cupón no se ven afectadas.
 
+Para probar que una revisión lee la pestaña, sin escribir nada:
+
+    curl -s -X POST <URL del tag o del servicio>/validar-cupon -H "Content-Type: application/json" -d '{"cupon":"noexiste","producto":"tu2027"}'
+
+Debe responder `{"motivo":"invalido","valido":false}`. Si responde `no_disponible`, el servicio no pudo leer la pestaña.
+
 ## Historial
 
 | Fecha | Revisión | Entorno PayPal | Nota |
@@ -134,3 +142,6 @@ v1.3 no agrega variables de entorno. La pestaña `Cupones` tiene que existir en 
 | 2026-10-09 | `fluxtro-pagos-00006-wff` | Live | `ALLOWED_ORIGINS` solo producción |
 | 2026-10-29 | `fluxtro-pagos-00007-yiy` | Live | v1.1: flask 3.1.3 y requests 2.33.0. Commit `4606068`, build `04dfe145-4bcf-49e9-95bb-42467a0f7251`, tag `v11` |
 | 2026-11-01 | `fluxtro-pagos-00008-vfw` | Live | `PRECIO_INFORME=10.00`, `PRECIO_COMBO=12.00` (fin de la promoción). Tráfico pasado a LATEST y tag `v11` quitado de `00007-yiy` |
+| 2026-11-15 | `fluxtro-pagos-00012-gij` | Live | v1.2 y v1.3 en un solo deploy: productos `tu2027` y `carta_tu2027`, y cupones. Commit `28171c0`, build `c9de8825-10cc-4304-ab6f-88e535b1ceb0`, tag `v13` (quitado al mover el tráfico). Suma `PRECIO_TU2027=10.00` y `PRECIO_CARTA_TU2027=17.00`. No existen revisiones `00009` a `00011` |
+
+**Regla:** cada deploy o cambio de configuración que cree una revisión agrega su fila en esta tabla, en el mismo commit que su documentación.

@@ -33,13 +33,43 @@
 
 ### Desplegado
 
-- Sin deploy.
+- Desplegado junto con v1.2 el 2026-11-15, en un solo deploy. Commit `28171c0`. Build `c9de8825-10cc-4304-ab6f-88e535b1ceb0`.
+- Revisión `fluxtro-pagos-00012-gij` (tag `v13` durante la verificación), al 100% del tráfico desde el 2026-11-15,
+  con `latestRevision: true` y sin tags. Rollback: `fluxtro-pagos-00008-vfw`.
+- Comando: `gcloud run deploy fluxtro-pagos --source . --region us-central1 --project fluxtro-mvp --no-traffic --tag v13 --update-env-vars PRECIO_TU2027=10.00,PRECIO_CARTA_TU2027=17.00`.
+  La revisión heredó el resto de la configuración Live.
+- Tráfico: `gcloud run services update-traffic fluxtro-pagos --region us-central1 --project fluxtro-mvp --to-latest --remove-tags v13`.
+- Los productos nuevos y los cupones no se pueden comprar ni usar hasta que la landing los ofrezca.
 
 ### Verificado
 
 - `96 passed` (`.venv/Scripts/python -m pytest -q tests`).
 - Spec: `Claude outputs/SPEC_cupones_v1.3_2026-11-14.md`.
   Reporte: `Claude outputs/REPORTE_cupones_v1.3_2026-11-14.md`.
+- **En Cloud Shell (2026-11-15)**, clon en `28171c0`: `gcloud meta list-files-for-upload` listó `Dockerfile`,
+  `requirements.txt` y `main.py`.
+- **Sheet (2026-11-15, antes del deploy):** fila 1 de `Leads`, AA a AD: `Estado_Tu2027`, `Texto_Tu2027`,
+  `Link_Tu2027`, `Cupon`. Pestaña `Cupones`, A a H: `Codigo`, `Grupo`, `Descuento`, `Producto`, `Tope`, `Usos`,
+  `Vence`, `Activo`.
+- `gcloud run revisions describe fluxtro-pagos-00012-gij`: `PAYPAL_ENV=live`, `PRECIO_INFORME='10.00'`,
+  `PRECIO_COMBO='12.00'`, `PRECIO_TU2027='10.00'`, `PRECIO_CARTA_TU2027='17.00'`, `PAYPAL_CLIENT_SECRET` →
+  `paypal-client-secret-live:latest`, `PAYPAL_WEBHOOK_ID=9HK87803SX890961V`.
+- **Contra el tag `v13`, antes de mover el tráfico:**
+  - `GET /health`: `{"status":"ok"}`.
+  - `POST /validar-cupon` con `{"cupon":"noexiste","producto":"tu2027"}`: `{"motivo":"invalido","valido":false}`.
+    Prueba que la revisión lee la pestaña `Cupones` del Sheet real.
+  - `POST /crear-orden` con `informe`: `{"id":"26B35022R39623403"}`. Con `tu2027`: `{"id":"1X273624HM910720R"}`.
+    Las dos órdenes se crearon en PayPal Live con un `id_pedido` aleatorio y no se pagaron.
+- **Después de mover el tráfico:** `status.traffic` con una sola entrada, `latestRevision: true`, `percent: 100`,
+  `fluxtro-pagos-00012-gij`, sin tags. `/health` en la URL de producción: `{"status":"ok"}`.
+
+### PENDIENTE DE VERIFICAR
+
+- La captura de un pago real de `tu2027`, de `carta_tu2027` y de una compra con cupón. Dependen de la landing
+  (specs 3 y 3b). Hasta ahora solo las cubren las pruebas automáticas.
+- Por qué no existen las revisiones `00009` a `00011`: `gcloud run revisions list` del 2026-11-15 muestra
+  `00012-gij` seguida de `00008-vfw`. Se puede buscar en Cloud Logging, registros de auditoría del servicio
+  `fluxtro-pagos` entre el 2026-11-01 y el 2026-11-15.
 
 ## 1.2 · 2026-11-14
 
@@ -64,7 +94,7 @@
 
 ### Desplegado
 
-- Sin deploy. Producción sigue en `fluxtro-pagos-00008-vfw`.
+- Desplegado junto con v1.3 el 2026-11-15, en la revisión `fluxtro-pagos-00012-gij`. Detalle en el tramo 1.3.
 
 ### Verificado
 
