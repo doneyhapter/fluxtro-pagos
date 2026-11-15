@@ -80,8 +80,10 @@ worker). En orden:
 ```
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt pytest
-.venv/Scripts/python -m pytest -q
+.venv/Scripts/python -m pytest -q tests
 ```
+
+Se corre sobre la carpeta `tests`: `Claude outputs/` puede tener archivos de referencia con nombre `test_*.py`, que pytest recogería desde la raíz.
 
 Las pruebas usan una hoja falsa en memoria; no usan red, PayPal ni el engine. `pytest` no está en
 `requirements.txt`.
