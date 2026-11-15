@@ -118,6 +118,10 @@ aparece con 0%, el tráfico está fijado: correr `gcloud run services update-tra
 Los precios se cambian en tres lugares a la vez: estas variables, los textos de la landing
 (index.html y formulario-exitoso.html) y los Payment Links de respaldo en PayPal.
 
+## Cupones
+
+v1.3 no agrega variables de entorno. La pestaña `Cupones` tiene que existir en el Sheet, con los encabezados del README, antes de usar un cupón; mientras no exista, todo cupón se responde como no disponible y las compras sin cupón no se ven afectadas.
+
 ## Historial
 
 | Fecha | Revisión | Entorno PayPal | Nota |

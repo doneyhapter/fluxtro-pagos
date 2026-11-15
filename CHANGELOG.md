@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.3 · 2026-11-14
+
+### Cambios
+
+- Cupones de descuento: los códigos viven en la pestaña `Cupones` del Sheet, que se edita a mano; crear, cambiar o apagar un cupón no requiere deploy.
+- `main.py`:
+  - Constantes `HOJA_CUPONES`, `COL_CUPON`, `COL_CUPON_USOS`, `PISO_CON_CUPON`, `ZONA_CUPONES`, `MOTIVOS_CUPON` y `RE_CUPON`. `/validar-cupon` se suma a `RUTAS_CORS`.
+  - Bloque "Cupones": `CuponRechazado`, `_hoja_cupones()`, `_normalizar()`, `_a_decimal()`, `_a_entero()`, `_a_fecha()`, `_buscar_cupon()`, `_evaluar_cupon()` y `_monto()`. La pestaña se lee con `UNFORMATTED_VALUE` para no depender de la configuración regional del Sheet.
+  - `_monto_valido()` recibe el monto esperado en vez del producto.
+  - `_procesar_con_lock()`: admite el tercer campo de `custom_id`, calcula el monto esperado con el cupón, escribe AD y suma el uso en `Cupones` cuando el pago queda `Pagado`.
+  - `/crear-orden`: campo opcional `cupon`. Con cupón rechazado responde `409` con `{"error": "cupon", "motivo": ...}` y no llama a PayPal. Sin cupón, igual que antes.
+  - Endpoint nuevo `POST /validar-cupon`: no escribe ni reserva nada.
+  - Motivos: `invalido`, `vencido`, `agotado`, `no_aplica`, `no_disponible`.
+- `tests/test_cupones.py`: copia literal de `Claude outputs/test_cupones_referencia.py` (sha256 `1b860c88572745d2a54f22e915560d4ca925375e0ccd328a8e5af8e39d561b75`).
+
+| # | Decisión |
+|---|---|
+| 1 | Pestaña `Cupones`: `Codigo`, `Grupo`, `Descuento`, `Producto`, `Tope`, `Usos`, `Vence`, `Activo` (fila 1 encabezados, datos desde la 2). |
+| 2 | Código sin distinguir mayúsculas, tildes ni espacios; de 3 a 30 caracteres entre letras, números, guion y guion bajo. Si dos filas quedan iguales, vale la primera. |
+| 3 | Vale hasta el final del día de `Vence`, hora de Montevideo (UTC-3 fijo). |
+| 4 | Si el precio con descuento queda por debajo de USD 3.00, el cupón se rechaza. |
+| 5 | El uso se cuenta al capturar el pago. Un pago duplicado no suma. |
+| 6 | Al capturar no se revisan de nuevo `Activo`, `Vence` ni `Tope`; puede quedar algún uso por encima del tope. |
+| 7 | Regla 8: monto esperado = precio − descuento del cupón de `custom_id`. Si el cupón no se puede leer o ya no existe, se espera el precio completo y el pago queda en `Monto inválido`, sin liberar. |
+| 8 | A PayPal va el monto final, sin `breakdown`. La descripción suma ` - descuento <código>`, solo ASCII. |
+| 9 | `custom_id` admite un tercer campo opcional: `id_pedido\|producto\|cupon`. |
+| 10 | Columna AD (30), `Cupon`, en `Leads`: código usado, también con `Monto inválido`. |
+| 11 | Un solo código por compra. |
+| 12 | Si `Cupones` no se puede leer: `/validar-cupon` responde no disponible y `/crear-orden` no crea la orden con cupón. Nunca se cobra un precio distinto del visto. |
+| 13 | Sin variables de entorno nuevas. |
+
+### Desplegado
+
+- Sin deploy.
+
+### Verificado
+
+- `96 passed` (`.venv/Scripts/python -m pytest -q tests`).
+- Spec: `Claude outputs/SPEC_cupones_v1.3_2026-11-14.md`.
+  Reporte: `Claude outputs/REPORTE_cupones_v1.3_2026-11-14.md`.
+
 ## 1.2 · 2026-11-14
 
 ### Cambios

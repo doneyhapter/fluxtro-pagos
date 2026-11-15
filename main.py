@@ -5,6 +5,8 @@ import os
 import re
 import threading
 import time
+import unicodedata
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import google.auth
@@ -22,6 +24,7 @@ log = logging.getLogger("fluxtro-pagos")
 # ---------------------------------------------------------------------------
 
 HOJA = "Leads"
+HOJA_CUPONES = "Cupones"
 SCOPE_SHEETS = "https://www.googleapis.com/auth/spreadsheets"
 TIMEOUT_PAYPAL = 15
 
@@ -49,11 +52,19 @@ COL_ESTADO_FASE1 = 14  # N
 COL_ESTADO_AUDIO = 18  # R
 COL_ID_PEDIDO = 22  # V
 COL_ESTADO_TU2027 = 27  # AA
+COL_CUPON = 30  # AD
+
+# Pestaña Cupones: A Codigo · B Grupo · C Descuento · D Producto · E Tope · F Usos · G Vence · H Activo
+COL_CUPON_USOS = 6  # F
+PISO_CON_CUPON = Decimal("3.00")  # precio mínimo después del descuento (USD)
+ZONA_CUPONES = timezone(timedelta(hours=-3))  # Montevideo, sin horario de verano
+MOTIVOS_CUPON = ("invalido", "vencido", "agotado", "no_aplica", "no_disponible")
 
 RE_UUID4 = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
 RE_ORDER_ID = re.compile(r"[A-Za-z0-9]{1,64}")
+RE_CUPON = re.compile(r"[a-z0-9_-]{3,30}")
 
 # "pendientes": columnas que, además de N, pasan a `Pendiente` al liberar la fila.
 # R dispara el audio de la carta natal y AA el informe "Tu 2027" (los lee el engine).
@@ -107,7 +118,7 @@ app = Flask(__name__)
 # CORS (solo /crear-orden y /capturar-orden)
 # ---------------------------------------------------------------------------
 
-RUTAS_CORS = ("/crear-orden", "/capturar-orden")
+RUTAS_CORS = ("/crear-orden", "/capturar-orden", "/validar-cupon")
 
 
 @app.after_request
@@ -196,6 +207,131 @@ def _escribir(ws, cambios):
 
 
 # ---------------------------------------------------------------------------
+# Cupones (pestaña Cupones del mismo Sheet)
+# ---------------------------------------------------------------------------
+
+_cupones_cache = {"ws": None}
+
+
+class CuponRechazado(Exception):
+    """El cupón no se puede usar. `motivo` es uno de MOTIVOS_CUPON."""
+
+    def __init__(self, motivo):
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+def _hoja_cupones():
+    """Devuelve la pestaña Cupones (misma planilla que Leads)."""
+    if _cupones_cache["ws"] is None:
+        _cupones_cache["ws"] = _hoja().spreadsheet.worksheet(HOJA_CUPONES)
+    return _cupones_cache["ws"]
+
+
+def _normalizar(texto):
+    """Minúsculas, sin tildes y sin espacios: 'Amigos del Colegio' -> 'amigosdelcolegio'."""
+    if isinstance(texto, bool):
+        texto = "true" if texto else "false"
+    if not isinstance(texto, str):
+        texto = "" if texto is None else str(texto)
+    sin_tildes = "".join(
+        c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c)
+    )
+    return re.sub(r"\s+", "", sin_tildes).lower()
+
+
+def _a_decimal(valor):
+    if isinstance(valor, bool):
+        raise InvalidOperation
+    return Decimal(str(valor).strip().replace(",", "."))
+
+
+def _a_entero(valor):
+    if isinstance(valor, bool):
+        raise ValueError
+    n = _a_decimal(valor)
+    if n != n.to_integral_value():
+        raise ValueError
+    return int(n)
+
+
+def _a_fecha(valor):
+    """Fecha de la celda Vence: número de serie de Sheets, AAAA-MM-DD o DD/MM/AAAA."""
+    if isinstance(valor, bool):
+        raise ValueError
+    if isinstance(valor, (int, float)):
+        return date(1899, 12, 30) + timedelta(days=int(valor))
+    texto = str(valor).strip()
+    for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    raise ValueError(texto)
+
+
+def _buscar_cupon(codigo):
+    """Primera fila de Cupones cuyo código normalizado es `codigo`. Devuelve (n_fila, celdas) o None."""
+    from gspread.utils import ValueRenderOption
+
+    filas = _hoja_cupones().get("A2:H", value_render_option=ValueRenderOption.unformatted)
+    for i, f in enumerate(filas, start=2):
+        celdas = list(f) + [""] * (8 - len(f))
+        if _normalizar(celdas[0]) == codigo:
+            return i, celdas
+    return None
+
+
+def _evaluar_cupon(codigo, producto, estricto=True):
+    """Devuelve (descuento, total, n_fila, usos) o lanza CuponRechazado.
+
+    `codigo` llega normalizado. Con estricto=False (captura de un pago ya aprobado) no se
+    revisan Activo, Vence ni Tope: el descuento se le respeta a quien ya lo vio.
+    """
+    if not RE_CUPON.fullmatch(codigo or ""):
+        raise CuponRechazado("invalido")
+    hallado = _buscar_cupon(codigo)
+    if hallado is None:
+        raise CuponRechazado("invalido")
+    n_fila, (_, _, c_desc, c_prod, c_tope, c_usos, c_vence, c_activo) = hallado
+
+    try:
+        descuento = _a_decimal(c_desc)
+        tope = _a_entero(c_tope)
+        usos = _a_entero(c_usos) if str(c_usos).strip() else 0
+        vence = _a_fecha(c_vence) if str(c_vence).strip() else None
+    except (InvalidOperation, ValueError):
+        log.error("cupón %s: fila %s de Cupones con datos inválidos", codigo, n_fila)
+        raise CuponRechazado("invalido")
+    if descuento <= 0 or tope < 1:
+        log.error("cupón %s: descuento o tope inválidos en la fila %s", codigo, n_fila)
+        raise CuponRechazado("invalido")
+
+    aplica = [_normalizar(p) for p in str(c_prod).split(",") if p.strip()]
+    if "todos" not in aplica and _normalizar(PRODUCTOS[producto]["nombre"]) not in aplica:
+        raise CuponRechazado("no_aplica")
+
+    total = Decimal(_precio(producto)) - descuento
+    if total < PISO_CON_CUPON:
+        log.error("cupón %s: deja %s en %s, por debajo del piso", codigo, producto, total)
+        raise CuponRechazado("invalido")
+
+    if estricto:
+        if _normalizar(c_activo) not in ("si", "true", "verdadero"):
+            raise CuponRechazado("invalido")
+        if vence is not None and datetime.now(ZONA_CUPONES).date() > vence:
+            raise CuponRechazado("vencido")
+        if usos >= tope:
+            raise CuponRechazado("agotado")
+
+    return descuento, total, n_fila, usos
+
+
+def _monto(valor):
+    return f"{valor:.2f}"
+
+
+# ---------------------------------------------------------------------------
 # Procesamiento de capturas
 # ---------------------------------------------------------------------------
 
@@ -206,11 +342,11 @@ def _precio(producto):
     return _cfg(PRODUCTOS[producto]["precio"])
 
 
-def _monto_valido(currency, value, producto):
+def _monto_valido(currency, value, esperado):
     if currency != "USD":
         return False
     try:
-        return Decimal(str(value)) == Decimal(_precio(producto))
+        return Decimal(str(value)) == Decimal(str(esperado))
     except InvalidOperation:
         return False
 
@@ -222,10 +358,16 @@ def _procesar_con_lock(capture_id, status, value, currency, custom_id):
         return False
 
     partes = (custom_id or "").split("|")
-    if len(partes) != 2 or not RE_UUID4.fullmatch(partes[0]) or partes[1] not in PRODUCTOS:
+    if (
+        len(partes) not in (2, 3)
+        or not RE_UUID4.fullmatch(partes[0])
+        or partes[1] not in PRODUCTOS
+        or (len(partes) == 3 and not RE_CUPON.fullmatch(partes[2]))
+    ):
         log.error("captura %s: custom_id inválido %r (regla 2)", capture_id, custom_id)
         return False
-    id_pedido, producto = partes
+    id_pedido, producto = partes[0], partes[1]
+    cupon = partes[2] if len(partes) == 3 else ""
 
     ws = _hoja()
     ids = ws.col_values(COL_ID_PEDIDO)
@@ -252,10 +394,30 @@ def _procesar_con_lock(capture_id, status, value, currency, custom_id):
         log.warning("captura %s, pedido %s: pago duplicado (regla 6)", capture_id, id_pedido)
         return False
 
-    estado = "Pagado" if _monto_valido(currency, value, producto) else "Monto inválido"
-    _escribir(ws, [
+    esperado = Decimal(_precio(producto))
+    fila_cupon = usos_cupon = None
+    if cupon:
+        try:
+            _, esperado, fila_cupon, usos_cupon = _evaluar_cupon(cupon, producto, estricto=False)
+        except Exception as e:  # sin cupón legible se espera el precio completo
+            log.error(
+                "captura %s, pedido %s: no se pudo leer el cupón %s: %s",
+                capture_id, id_pedido, cupon, e,
+            )
+
+    estado = "Pagado" if _monto_valido(currency, value, esperado) else "Monto inválido"
+    cambios = [
         (f"W{fila}:Z{fila}", [estado, PRODUCTOS[producto]["nombre"], str(value), capture_id]),
-    ])
+    ]
+    if cupon:
+        cambios.append((f"AD{fila}", [cupon]))
+    _escribir(ws, cambios)
+
+    if estado == "Pagado" and fila_cupon is not None:
+        try:
+            _hoja_cupones().update_cell(fila_cupon, COL_CUPON_USOS, usos_cupon + 1)
+        except Exception as e:  # el pago ya está registrado: el conteo se corrige a mano
+            log.error("pedido %s: no se pudo sumar el uso del cupón %s: %s", id_pedido, cupon, e)
 
     if estado == "Monto inválido":
         log.error(
@@ -335,12 +497,29 @@ def crear_orden():
     ):
         return jsonify({"error": "datos inválidos"}), 400
 
+    custom_id = f"{id_pedido}|{producto}"
+    descripcion = PRODUCTOS[producto]["descripcion"]
+    monto = _precio(producto)
+    cupon = cuerpo.get("cupon")
+    if cupon not in (None, ""):
+        codigo = _normalizar(cupon) if isinstance(cupon, str) else ""
+        try:
+            _, total, _, _ = _evaluar_cupon(codigo, producto)
+        except CuponRechazado as e:
+            return jsonify({"error": "cupon", "motivo": e.motivo}), 409
+        except Exception as e:
+            log.error("no se pudo validar el cupón del pedido %s: %s", id_pedido, e)
+            return jsonify({"error": "cupon", "motivo": "no_disponible"}), 409
+        custom_id += f"|{codigo}"
+        descripcion += f" - descuento {codigo}"
+        monto = _monto(total)
+
     orden = {
         "intent": "CAPTURE",
         "purchase_units": [{
-            "custom_id": f"{id_pedido}|{producto}",
-            "description": PRODUCTOS[producto]["descripcion"],
-            "amount": {"currency_code": "USD", "value": _precio(producto)},
+            "custom_id": custom_id,
+            "description": descripcion,
+            "amount": {"currency_code": "USD", "value": monto},
         }],
         "payment_source": {
             "paypal": {
@@ -360,6 +539,34 @@ def crear_orden():
     except Exception as e:
         log.error("no se pudo crear la orden del pedido %s: %s", id_pedido, e)
         return jsonify({"error": "no se pudo crear la orden"}), 502
+
+
+@app.route("/validar-cupon", methods=["POST", "OPTIONS"])
+def validar_cupon():
+    """Dice si un cupón sirve para un producto y cuánto queda por pagar. No reserva nada."""
+    if request.method == "OPTIONS":
+        return "", 204
+    cuerpo = _json_dict()
+    producto = cuerpo.get("producto")
+    cupon = cuerpo.get("cupon")
+    if not isinstance(producto, str) or producto not in PRODUCTOS or not isinstance(cupon, str):
+        return jsonify({"error": "datos inválidos"}), 400
+
+    codigo = _normalizar(cupon)
+    try:
+        descuento, total, _, _ = _evaluar_cupon(codigo, producto)
+    except CuponRechazado as e:
+        return jsonify({"valido": False, "motivo": e.motivo}), 200
+    except Exception as e:
+        log.error("no se pudo validar el cupón: %s", e)
+        return jsonify({"valido": False, "motivo": "no_disponible"}), 200
+    return jsonify({
+        "valido": True,
+        "cupon": codigo,
+        "precio": _precio(producto),
+        "descuento": _monto(descuento),
+        "total": _monto(total),
+    }), 200
 
 
 @app.route("/capturar-orden", methods=["POST", "OPTIONS"])
